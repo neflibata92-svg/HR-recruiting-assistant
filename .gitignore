@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# pytest
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Chrome profiles & user data
+chrome-profiles/
+.user-data/
+
+# Resume data (private)
+WorkBuddy/
+boss-resumes/
+*.json.bak
+
+# Refactor intermediate artifacts (machine-generated; regenerate via tools/refactor_audit.py)
+artifacts/refactor/
+
+# Local real smoke / install smoke 目录（隔离但不在仓库内）
+boss-hr-output-smoke/
+boss-hr-cli-install-smoke/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / env (绝对不要提交)
+.env
+.env.local
+*.pem
+*.key
+secrets.*
