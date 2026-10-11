@@ -1,13 +1,13 @@
 # HR 辅助招聘
 
 > [!NOTE]
-> 由 **7 个 AI 智能体 Skill** 组成，基于 patchright + CDP 直连真实 Edge 浏览器（共享 wt2/zp_at/bst cookie），实现 BOSS 直聘简历筛选的**全流程自动化**：从岗位到可视化报告，一键搞定。
+> 本项目由 **7 个 Skill** 组成，围绕 BOSS 直聘的岗位信息提取、简历获取、评分和报告生成，提供一套可由智能体执行的招聘辅助流程。浏览器操作通过 patchright 和 CDP 连接专用 Edge；登录、筛选条件确认由用户完成，打招呼须经用户明确批准。
 >
-> **统一入口 CLI `boss-hr`**：所有 Agent / 用户通过 [`boss-hr` 命令](docs/CLI_WORKFLOW.md)（`boss-hr start / confirm / fetch / score / report / greet / status`）调用本工具包。**禁止直接调用底层脚本**。详见 [`boss-hr-auto/SKILL.md`](boss-hr-auto/SKILL.md)。
+> **统一入口**：智能体和用户通过 [`boss-hr` 命令](docs/CLI_WORKFLOW.md)调用工具包。公开命令包括 `doctor`、`start`、`confirm`、`fetch`、`score`、`report`、`greet` 和 `status`；不要直接运行底层脚本。智能体从 [`boss-hr-auto/SKILL.md`](boss-hr-auto/SKILL.md) 开始。
 >
-> **自包含**：不依赖第三方 BOSS CLI。所有 BOSS HTTP 调用走浏览器内 fetch（自动带 cookie + TLS 指纹），岗位查询走 `shared/recruiter_job_catalog.py`，登录检测走 `shared/cdp_preflight.py`。
+> **运行方式**：工具包不依赖第三方 BOSS CLI。BOSS HTTP 请求在已登录的浏览器会话内发起；岗位查询由 `shared/recruiter_job_catalog.py` 负责，登录状态由 `shared/cdp_preflight.py` 检查。
 >
-> **当前发布形态**：**GitHub 源码工具包 + editable install**（`pip install -e .`）。**不是**独立 wheel，**不**依赖移动源码后仍能运行。移动源码后必须重新 `pip install -e .` 才能继续使用 `boss-hr` 命令。
+> **发布形式**：项目以 GitHub 源码工具包提供，需在仓库目录执行 `pip install -e .`（editable install）。它不是独立 wheel；移动源码目录后，需重新安装才能继续使用 `boss-hr`。
 
 <p align="center">
   <img alt="skills" src="https://img.shields.io/badge/skills-7%20agents-blue">
@@ -17,131 +17,153 @@
 
 ---
 
-## 📑 目录
+## 目录
 
-- [✨ 这是什么](#-这是什么)
-- [🎯 核心能力](#-核心能力)
-- [🧩 技能一览与工作流](#-技能一览与工作流)
-- [🚀 快速开始](#-快速开始-cli-工作流)
-- [🧠 评分系统](#-评分系统)
-- [🛡️ 安全与风控](#️-安全与风控)
-- [📂 项目结构](#-项目结构)
-- [📤 输出文件](#-输出文件)
-- [⚙️ 环境变量](#️-环境变量)
-- [🔗 相关链接](#-相关链接)
+- [快速开始](#快速开始)
+- [项目能力](#项目能力)
+- [Skill 与工作流](#skill-与工作流)
+- [评分系统](#评分系统)
+- [安全与风控](#安全与风控)
+- [项目结构](#项目结构)
+- [输出文件](#输出文件)
+- [环境变量](#环境变量)
+- [相关链接](#相关链接)
 
 ---
 
-## 🚀 快速开始（CLI 工作流）
+## 快速开始
 
-**前置**：Windows + Python 3.10+ + Edge 浏览器 + `pip install -e .` 安装本工具包。
+**推荐环境**：Windows、Python 3.10+ 和 Edge。macOS / Linux 的手动浏览器启动方法见下文；完整流程仅在 Windows 上验证过。
 
-> **v1.1.2 自动恢复**：**不需要**预先手动启动 Edge，也**不需要**预先跑
-> `boss-hr doctor`。直接 `boss-hr start` 即可：
->
-> - 9222 已开 + 已登录 → 立即进入业务；
-> - 9222 未开 → 自动启动**专用** Edge
->   （`%LOCALAPPDATA%\boss-hr-edge-profile` + `--remote-debugging-port=9222`，
->   **不**污染日常 Edge profile）；
-> - 自动启动后未登录 → 自动打开 BOSS 招聘者登录页，轮询等待（默认 20s）；
-> - 超时未登录 → 返回 `status=waiting_user_login`（**不是错误**），
->   `next_action=retry_same_command`，**不创建 run**；
-> - 用户在专用 Edge 窗口内登录后，**重试同一条 start** 即可继续。
->
-> `boss-hr doctor` 仍是独立诊断工具，但**不再是 start 的必经前置**。
+自 v1.1.2 起，正常使用无需预先手动启动 Edge 或运行 `boss-hr doctor`。安装后直接执行 `boss-hr start`：
+
+1. 若 9222 端口已有已登录的浏览器会话，直接进入业务流程。
+2. 若端口未开启，自动启动专用 Edge（`%LOCALAPPDATA%\boss-hr-edge-profile`，调试端口 9222），不使用日常 Edge 配置目录。
+3. 若尚未登录，打开 BOSS 招聘者登录页并等待人工登录，默认等待 20 秒。
+4. 若等待超时，返回 `status=waiting_user_login` 和 `next_action=retry_same_command`，不创建 run。登录后重试同一条 `start` 命令即可继续。
+
+`boss-hr doctor` 用于独立诊断环境，不是 `start` 的必经步骤。
 
 ```bash
 git clone https://github.com/neflibata92-svg/HR-recruiting-assistant.git
 cd HR-recruiting-assistant
 python -m pip install -e .
 
-# 验证安装
-boss-hr --help          # 应列 8 个公开命令（含 doctor）
+# 验证安装：应列出 8 个公开命令（含 doctor）
+boss-hr --help
 python -m boss_hr --help # 等价入口
 ```
 
-完整 8 命令工作流（详见 [docs/CLI_WORKFLOW.md](docs/CLI_WORKFLOW.md)）：
+以下是主要业务流程；`doctor` 用于诊断环境，完整命令说明见 [CLI 工作流](docs/CLI_WORKFLOW.md)。
 
 ```bash
-# 1. 直接创建新 run（停在人工确认门；v1.1.2 自动启动 Edge + 等登录）
+# 1. 创建 run，并等待人工确认筛选条件
 boss-hr start "<encryptJobId|jobId|岗位名>" \
   --job-name "<岗位名>" --encrypt-job-id "<id>"
 # → status=waiting_user_confirmation，run_id=...
-# → 智能体停下，告知用户在 BOSS 推荐牛人页面调整筛选条件
-# 若 start 返回 status=waiting_user_login：智能体停下，告知用户在专用
-# Edge 中登录后重试同一条 start
+# → 智能体停下，等待用户在 BOSS 推荐牛人页面调整筛选条件
+# 若返回 waiting_user_login：先在专用 Edge 中登录，再重试同一条 start
 
-# 用户回复"继续"后：
-# 2. confirm + fetch
+# 用户确认筛选条件并回复“继续”后：
+# 2. 确认并获取简历
 boss-hr confirm --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>"
 boss-hr fetch   --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>" --count N
 
-# 3. score 循环（LLM 评一位 → 再调一次相同 score → scoring_complete）
+# 3. 评分：每次处理一位候选人，完成后再次调用同一命令
 boss-hr score   --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>"
-# → 读返回的 input_file、按 resume-screener/SKILL.md 评 4 维度（不评 edu）、
-#   写 output_file、再调一次相同的 score
+# → 读取返回的 input_file，按 resume-screener/SKILL.md 评 4 个维度
+#   （学历 edu 由分档表计算）；写入 output_file 后再次调用 score
 boss-hr score   --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>"
 # → status=scoring_complete
 
 # 4. report
 boss-hr report  --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>"
 
-# 5.（可选 + 用户明确批准时）greet — 这是**真实写操作**
+# 5. 可选：经用户明确批准后执行 greet（会在 BOSS 页面产生真实操作）
 boss-hr greet   --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>"
 
 # 6. 任意时点查看当前 run 状态
 boss-hr status  --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>"
 ```
 
-> ⚠️ **当前限制（GitHub 首版）**：
+> [!IMPORTANT]
+> **当前限制**：
 > - 不支持 `continue` / `batch` / 多批累计
 > - 真实 `greet` 成功点击（≥70 分候选人实际点击发送）尚未完成受控验证
 > - 仅在 Windows 上完整验证过；macOS / Linux 需自测
 
----
+### 环境准备与首次登录
 
-## ✨ 这是什么
+工具包不需要单独打包浏览器二进制文件；Python 依赖通过安装命令获取，浏览器使用系统已安装的版本。
 
-你有一个岗位，剩下的交给 AI：
+| 依赖 | 用途 | 准备方式 |
+|------|------|---------|
+| Python 3.10+ | 运行工具包 | 从 [python.org](https://python.org) 安装 |
+| patchright | 连接 CDP 浏览器；不包含浏览器，也不会下载 Chromium | 运行 `pip install -e .` 时安装 |
+| Edge / Chrome | 承载 BOSS 招聘者登录会话 | 使用系统已安装的浏览器；Windows 推荐 Edge |
 
+正常流程由 `boss-hr start` 自动启动专用 Edge，并在需要时打开 BOSS 登录页。请在该窗口**人工扫码登录**。`start`、`fetch` 和 `greet` 遇到未登录状态时，会打开登录页并等待；自动启动失败时可运行 `boss-hr doctor --launch-edge` 排查。
+
+只有自动启动失败或需要自行控制浏览器时，才手动开启 CDP：
+
+**Windows（Edge）：**
+
+```powershell
+Start-Process "msedge" -ArgumentList `
+  "--remote-debugging-port=9222", `
+  "--user-data-dir=$env:LOCALAPPDATA\boss-hr-edge-profile"
 ```
-   岗位          →   AI 自动提取 JD   →   自动下载候选人简历   →   自动评分排名   →   自动打招呼 + 可视化报告
-(一句话需求)        (boss-job-detail)      (boss-recommend-downloader)    (resume-screener)     (boss-hr-greet + html-report)
+
+**macOS / Linux（Chrome）：**
+
+```bash
+google-chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.boss-hr-edge-profile"
 ```
 
-**一句话概括：** AI 帮你在几十份简历中，几分钟内筛出最匹配的那几个，自动给高分候选人打招呼，并告诉你该和每个人聊什么。
+登录状态由工具自动检查 `zp_at`、`wt2` 和 `bst` Cookie。排查时可用共享模块自检：
+
+```python
+from shared.cdp_preflight import connect_cdp, check_login
+session = connect_cdp()        # 默认连接 http://localhost:9222
+print(check_login(session))    # {'logged_in': True/False, 'cookies': {...}, ...}
+```
+
+在支持 Skill 的智能体中，可以从 `boss-hr-auto` 发起流程，例如 `@skill://boss-hr-auto 机械工程师`；也可以直接提出“帮我筛选机械工程师的简历”。
 
 ---
 
-## 🎯 核心能力
+## 项目能力
 
-| 能力 | 说明 |
-|:----:|------|
-| 🔍 **JD 提取** | 一键抓取岗位详情、任职要求与核心技能点 |
-| 📥 **简历获取** | 从推荐牛人页面获取完整简历，真实浏览器指纹，低风控 |
-| 🧮 **智能评分** | 5 维度加权评分 + 学历分档校准，硬门槛过滤 |
-| 📬 **自动打招呼** | 给 ≥70 分的推荐 tier 候选人自动点 BOSS 打招呼按钮 |
-| 📊 **可视化报告** | 排名表 + 五维雷达图 + 个性化沟通建议，HTML 一键生成 |
-| 🧪 **可测试** | 核心算法由 `tests/` 单元测试用例覆盖 |
+给出招聘岗位后，工具包按顺序提取 JD、获取候选人简历、评分并生成可视化报告。智能体负责调用统一 CLI；HR 负责登录、确认筛选条件，并决定是否给高分候选人打招呼。
 
-> **🚪 `boss-hr-auto` 是唯一入口**，其余 Skill 是其子步骤。使用时始终从 `boss-hr-auto` 开始。
+| 能力 | 具体工作 |
+|------|----------|
+| JD 提取 | 获取岗位详情、任职要求和核心技能点 |
+| 简历获取 | 从推荐牛人页面获取候选人简历 |
+| 智能评分 | 按 5 个维度加权评分，结合学历分档和硬门槛过滤 |
+| 可视化报告 | 生成排名表、五维雷达图和个性化沟通建议 |
+| 打招呼 | 经用户明确批准后，给达到推荐阈值的候选人点击 BOSS 打招呼按钮 |
+| 测试 | `tests/` 覆盖核心算法的单元测试 |
 
-> **🆕 v2 接口（2026-07-29+）**：6 个 CLI 脚本全部接受 `--encrypt-job-id`（或 env `BOSS_HR_ENCRYPT_JOB_ID`），目录名从中文岗位名改为 BOSS 的 `encryptJobId`。详见 [📤 输出文件](#-输出文件新设计--2026-07-29) 章节。
+`boss-hr-auto` 是智能体的统一入口，其余 Skill 承担具体步骤。自 2026-07-29 的目录设计调整起，6 个底层 CLI 脚本接受 `--encrypt-job-id` 或环境变量 `BOSS_HR_ENCRYPT_JOB_ID`；工作区按 BOSS 的 `encryptJobId` 建目录，详见[输出文件](#输出文件)。
 
 ---
 
-## 🧩 技能一览与工作流
+## Skill 与工作流
 
-| # | Skill | 角色 | 作用 |
-|:-:|------|:----:|------|
-| 0 | **boss-hr-auto** | 🚪 入口 | 编排全流程工作流（唯一入口，5 步串到底） |
-| 2 | boss-job-detail | Step 1 | 提取岗位 JD |
-| 3 | **boss-recommend-downloader** | Step 2 | 从推荐牛人页面获取完整简历（含 run_all 一把梭） |
-| 4 | resume-screener | Step 3 | 硬门槛过滤 + 加权评分 + 学历分档 |
-| 5 | html-report | Step 4 | 生成可视化 HTML 报告 + 沟通建议 |
-| 5+ | **boss-hr-greet** | Step 5 | 给高分候选人自动打招呼（主流程自动触发） |
-| lib | shared/cdp_preflight | 基础 | CDP 连接 + 登录态探测 |
-| lib | shared/recruiter_job_catalog | 基础 | 招聘者岗位列表 + encryptJobId 解析 |
+| Skill | 角色 | 作用 |
+|-------|------|------|
+| `boss-hr-auto` | 统一入口 | 按步骤编排工作流，并在人工确认节点停下 |
+| `boss-job-detail` | 步骤 1 | 提取岗位 JD |
+| `boss-recommend-downloader` | 步骤 2 | 获取推荐牛人列表和简历；底层包含 `run_all` |
+| `resume-screener` | 步骤 3 | 硬门槛过滤、加权评分和学历分档 |
+| `html-report` | 步骤 4 | 生成 HTML 报告与沟通建议 |
+| `boss-hr-greet` | 可选步骤 5 | 经用户明确批准后给高分候选人打招呼 |
+| `shared` | 共享能力 | 提供浏览器连接、岗位解析及运行数据管理 |
+
+其中，`shared/cdp_preflight.py` 负责 CDP 连接和登录状态检查；`shared/recruiter_job_catalog.py` 负责查询招聘者岗位并解析 `encryptJobId`。
 
 ### 工作流示意图
 
@@ -151,100 +173,23 @@ flowchart LR
     B --> C[boss-recommend-downloader<br/>推荐牛人列表 + 在线简历]
     C --> D[resume-screener<br/>LLM 评分 + 公式重算]
     D --> E[html-report<br/>可视化报告]
-    D --> F[boss-hr-greet<br/>≥70 自动打招呼]
+    D -->|用户明确批准| F[boss-hr-greet<br/>≥70 分候选人打招呼]
     B -.->|查询岗位| G[(shared/recruiter_job_catalog<br/>BOSS 后端 API)]
     B -.->|登录自检| H[(shared/cdp_preflight<br/>zp_at/wt2/bst cookie)]
     G -.->|浏览器内 fetch| I[Edge CDP 9222]
     H -.->|patchright| I
 ```
 
-虚线箭头表示**底层依赖**：`boss-job-detail` 通过 `recruiter_job_catalog` 查岗位列表，
-每个 Step 入口通过 `cdp_preflight` 自检登录态；二者都通过 patchright 连到本地
-Edge 9222 端口（共享同一份 wt2/zp_at/bst cookie）。
+虚线箭头表示底层依赖：`boss-job-detail` 通过 `recruiter_job_catalog` 查询岗位；各步骤通过 `cdp_preflight` 检查登录状态，并使用 patchright 连接本地 Edge 的 9222 端口，复用该浏览器会话。
 
 ---
 
-## 🚀 快速开始
-
-> **无需打包任何二进制文件。** 以下全部通过包管理器安装，浏览器用系统自带的即可。
-
-### 前置依赖
-
-| 依赖 | 说明 | 安装方式 |
-|------|------|---------|
-| Python 3.10+ | 运行脚本 | [python.org](https://python.org) |
-| patchright | CDP 客户端（**不含浏览器，不下载 Chromium**） | `pip install patchright` |
-| Chrome / Edge | 系统自带即可 | 已装直接跳过 |
-
-### 1. 安装
-
-```bash
-# Python 依赖（patchright 是唯一第三方依赖）
-pip install patchright
-```
-
-### 2. 启动 CDP 浏览器（v1.1.2 通常由 start 自动启动）
-
-**正常流程无需手动启动**：`boss-hr start` 会自动启动专用 Edge
-（`%LOCALAPPDATA%\boss-hr-edge-profile` + `--remote-debugging-port=9222`），
-并在专用 Edge 中打开 BOSS 登录页等待登录。
-
-仅当自动启动失败、或你希望手动控制时，使用下面命令：
-
-**Windows（推荐自带 Edge）：**
-
-```powershell
-Start-Process "msedge" -ArgumentList `
-  "--remote-debugging-port=9222", `
-  "--user-data-dir=$env:LOCALAPPDATA\boss-hr-edge-profile"
-```
-
-**macOS / Linux：**
-
-```bash
-google-chrome \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.boss-hr-edge-profile"
-```
-
-### 3. 登录
-
-在打开的 Edge 窗口里**人工扫码登录 BOSS 招聘者**，登录态会被 9222 端口的浏览器 session 持有。
-
-v1.1.2 默认行为：start / fetch / greet 都会自动在专用 Edge 中打开 BOSS
-登录页，等待用户登录后继续。`boss-hr doctor` 也支持 `--launch-edge`
-手动启动专用 Edge。
-
-验证脚本会自动检查 `zp_at` / `wt2` / `bst` 三 cookie 是否齐全，无须手动命令。可以用 shared 模块快速自检：
-
-```python
-from shared.cdp_preflight import connect_cdp, check_login
-session = connect_cdp()        # 默认连 http://localhost:9222
-print(check_login(session))    # {'logged_in': True/False, 'cookies': {...}, ...}
-```
-
-### 4. 开始使用
-
-在智能体中调用：
-
-```
-@skill://boss-hr-auto 机械工程师
-```
-
-或直接说：
-
-```
-帮我筛选机械工程师的简历
-```
-
----
-
-## 🧠 评分系统
+## 评分系统
 
 ### 当前权重（5 维加权求和）
 
 > [!NOTE]
-> 当前 `resume-screener/scripts/score_resumes.py` 已统一为**单套 5 维权重**（合计 100%）。如需区分岗位类型，建议在 `WEIGHTS` 常量上扩展，不要直接硬编码多套。
+> `resume-screener/scripts/score_resumes.py` 使用一套 5 维权重，合计 100%。如需区分岗位类型，可在 `WEIGHTS` 常量上扩展，避免分散硬编码。
 
 | 维度 | 权重 | 评分方法 |
 |------|:----:|---------|
@@ -286,26 +231,26 @@ print(check_login(session))    # {'logged_in': True/False, 'cookies': {...}, ...
 
 ---
 
-## 🛡️ 安全与风控
+## 安全与风控
 
 ### 推荐牛人下载
 
 | 做法 | 说明 |
 |:----:|------|
-| ✅ 真实浏览器 TLS 指纹 | 通过 patchright 在 Edge 内 fetch，服务器无法区分真人 |
-| ✅ 滚动延迟 3-6 秒随机 | 模拟真人浏览 |
-| ✅ 简历获取 60-120 秒随机（每 5 人触发一次长延迟） | 模拟真人阅读 + 风控 |
-| ✅ 建议工作时间运行 | 9:00-18:00 |
-| ✅ 单次建议不超过 50 人 | 超过则分批次 |
+| 浏览器会话 | 通过 patchright 连接 Edge，在已登录的浏览器会话中发起请求 |
+| 滚动间隔 | 随机等待 3–6 秒，为页面加载留出时间 |
+| 简历获取间隔 | 随机等待 60–120 秒，每处理 5 人增加一次较长等待 |
+| 建议运行时间 | 9:00–18:00 |
+| 单次建议数量 | 不超过 50 人；更多候选人分批处理 |
 
 ### 通用规则
 
-- ❌ 不自动发消息（CLI 权限不足）
+- ❌ 不自动发送普通消息；`greet` 仅在用户明确批准后执行
 - ✅ 批量操作间隔随机延迟
 - ✅ 增量同步（已下载简历自动跳过）
 - ✅ Cookie 优先从浏览器本地提取
 
-### 风控检测维度
+### 操作节奏建议
 
 | 维度 | 安全做法 | 危险做法 |
 |------|---------|---------|
@@ -316,13 +261,15 @@ print(check_login(session))    # {'logged_in': True/False, 'cookies': {...}, ...
 
 ---
 
-## 📂 项目结构
+## 项目结构
 
 ```
-boss-hr-agent-toolkit/
+HR-recruiting-assistant/
 ├── README.md                          # 本文件
 ├── FILE_MANAGEMENT.md                 # 文件管理规范
 ├── .gitignore
+│
+├── boss_hr/                          # 统一 CLI：命令、应用服务和浏览器适配
 │
 ├── boss-hr-auto/                      # 🚪 全流程编排（唯一入口，纯文档）
 │   └── SKILL.md                        # 智能体按此文档顺序调用各子 Skill 脚本
@@ -349,11 +296,12 @@ boss-hr-agent-toolkit/
 │   ├── scripts/generate_html_report.py
 │   └── templates/report.html
 │
-├── boss-hr-greet/                     # Step 5：自动打招呼（主流程自动触发）
+├── boss-hr-greet/                     # 可选步骤 5：用户批准后打招呼
 │   ├── SKILL.md
 │   └── scripts/auto_greet.py          # 位置表 + 倒序招呼
 │
 ├── shared/                            # 共享工具
+│   ├── SKILL.md                        # 共享能力说明
 │   ├── output_manager.py              # 统一文件路径管理
 │   ├── run_orchestrator.py            # 跨 Step run_id 编排
 │   ├── job_resume_store.py            # 候选人键 + 状态读写 + 简历合并
@@ -368,9 +316,9 @@ boss-hr-agent-toolkit/
 
 ---
 
-## 📤 输出文件（新设计 · 2026-07-29+）
+## 输出文件
 
-> **目录名 = BOSS 的 `encryptJobId`**（不再是中文岗位名）。`job_name`（中文岗位名）只作为 `jobs.json` 里的可读元数据。这样做的核心原因：避免中文路径在 URL/文件 IO 里的编码翻车；6 个 CLI 脚本统一通过 `--encrypt-job-id`（或 env `BOSS_HR_ENCRYPT_JOB_ID`）透传给 `JobOutputManager`，**路径选择集中在 shared 层**。
+每个岗位以 BOSS 的 `encryptJobId` 建目录，不再使用中文岗位名。`job_name` 仅作为 `jobs.json` 中的可读信息。这样可以避免中文路径在 URL 和文件读写中出现编码问题；6 个底层 CLI 脚本通过 `--encrypt-job-id` 或 `BOSS_HR_ENCRYPT_JOB_ID` 将岗位 ID 传给 `JobOutputManager`，由 `shared` 统一管理路径。
 
 ```
 ~/Desktop/boss-hr-output/                         # 工作区根（可用 BOSS_HR_OUTPUT_DIR 改）
@@ -409,7 +357,7 @@ ValueError: 缺少 encrypt_job_id。
   传 --encrypt-job-id，或设置 env BOSS_HR_ENCRYPT_JOB_ID
 ```
 
-不会静默回退到中文目录名——避免你以为跑了新路径、实际又落到中文路径的事故。
+缺少岗位 ID 时不会回退到中文目录，避免输出写入错误位置。
 
 > [!TIP]
 > - 禁止在桌面散落文件；HTML 报告放 run 目录（文件名含 run_id，永不覆盖历史），中间数据放 `process/`
@@ -421,20 +369,19 @@ ValueError: 缺少 encrypt_job_id。
 
 ---
 
-## ⚙️ 环境变量
+## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `BOSS_BIN` | boss CLI 路径 | `boss` |
-| `CDP_URL` | 浏览器 CDP 调试地址 | `http://localhost:9222` |
 | `BOSS_HR_OUTPUT_DIR` | 工作区根 | `~/Desktop/boss-hr-output` |
 | `BOSS_HR_ENCRYPT_JOB_ID` | BOSS 加密岗位 ID（=工作区子目录名） | 缺则 `ValueError` |
 | `PYTHONHOME` | **必须清空** | `""` |
 | `PYTHONIOENCODING` | 避免 CLI 编码问题 | `utf-8` |
 
+浏览器 CDP 地址当前默认是 `http://localhost:9222`，脚本未从 `CDP_URL` 环境变量读取；统一 CLI 也不使用旧文档中的 `BOSS_BIN`。
+
 ---
 
-## 🔗 相关链接
+## 相关链接
 
 - [patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright) — Playwright 分支（CDP 浏览器控制）
-
