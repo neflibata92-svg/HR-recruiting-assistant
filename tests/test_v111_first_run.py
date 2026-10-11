@@ -113,7 +113,9 @@ def test_doctor_help_listed():
 def test_doctor_skips_browser_path(tmp_path, monkeypatch):
     """--skip-browser → 返回 local_only + 不连 CDP。"""
     from boss_hr.commands import doctor as doctor_cmd
+    from boss_hr.application import doctor_service as ds
     from boss_hr.cli import build_parser
+    monkeypatch.setattr(ds, "check_patchright_installed", lambda: True)
     import argparse
     p = build_parser()
     ns = p.parse_args(["doctor", "--skip-browser"])
@@ -154,8 +156,8 @@ def test_doctor_returns_cdp_not_running_when_no_9222(monkeypatch):
     assert d["ok"] is False
     assert d["error"]["code"] == "CDP_NOT_RUNNING"
     assert d["error"]["recoverable"] is True
-    assert d["error"]["remediation"]["command"] == "boss-hr doctor --launch-edge"
-    assert "启动专用 Edge" in d["error"]["remediation"]["instructions"][0]
+    assert d["error"]["remediation"]["command"] == "boss-hr doctor --launch-browser"
+    assert "启动专用" in d["error"]["remediation"]["instructions"][0]
 
 
 def test_doctor_returns_edge_not_found(monkeypatch):
@@ -184,9 +186,12 @@ def test_doctor_returns_edge_not_found(monkeypatch):
     assert d["error"]["code"] in ("CDP_NOT_RUNNING", "EDGE_NOT_FOUND")
 
 
-def test_doctor_launch_edge_uses_dedicated_profile(monkeypatch):
+def test_doctor_launch_edge_uses_dedicated_profile(monkeypatch, tmp_path):
     """--launch-edge 必须用专用 profile 目录（不污染用户普通 Edge profile）。"""
     from boss_hr.application import doctor_service as ds
+    monkeypatch.setattr(ds.sys, "platform", "win32")
+    monkeypatch.setattr(ds, "_default_profile_dir",
+                        lambda: str(tmp_path / "boss-hr-edge-profile"))
 
     fake_edge = r"C:\fake\edge\msedge.exe"
     monkeypatch.setattr(

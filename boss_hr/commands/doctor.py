@@ -4,7 +4,7 @@
 `boss-hr doctor` 是环境健康检查 + 启动辅助命令。
 
   boss-hr doctor
-  boss-hr doctor --launch-edge
+  boss-hr doctor --launch-browser
 
 不连业务岗位接口，不创建 run，不写业务输出。
 """
@@ -18,8 +18,8 @@ from boss_hr.application.doctor_service import run_doctor
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """doctor 不要求 --job-name / --run-id / --encrypt-job-id。"""
     parser.add_argument(
-        "--launch-edge", action="store_true",
-        help="启动专用 Edge（带 --remote-debugging-port=9222）并等待端口监听",
+        "--launch-browser", "--launch-edge", dest="launch_edge", action="store_true",
+        help="启动专用浏览器（macOS 为 Chrome，Windows 为 Edge），并等待 CDP 端口监听",
     )
     parser.add_argument(
         "--skip-browser", action="store_true",

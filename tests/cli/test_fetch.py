@@ -389,7 +389,7 @@ def test_fetch_download_only_after_list_success(fetch_mocks):
 
 
 # ============================================================
-# 11. count 正确映射给两个旧脚本（都收 --max N）
+# 11. list 使用 2 倍供给缓冲，download 使用请求数量
 # ============================================================
 
 def test_fetch_count_maps_to_max_for_both(tmp_path, monkeypatch):
@@ -421,11 +421,11 @@ def test_fetch_count_maps_to_max_for_both(tmp_path, monkeypatch):
 
     proc = _run_cli_inproc(job_name=job, encrypt_job_id=eid, run_id=target, count=7)
     assert proc.returncode == 0
-    # 两个子脚本都收到 --max 7
+    # list 多抓一倍作为供给缓冲，download 仍只下载用户请求的 7 份
     list_args = mock_calls[0]["args"]
     dl_args = mock_calls[1]["args"]
     assert "--max" in list_args
-    assert list_args[list_args.index("--max") + 1] == "7"
+    assert list_args[list_args.index("--max") + 1] == "14"
     assert "--max" in dl_args
     assert dl_args[dl_args.index("--max") + 1] == "7"
 

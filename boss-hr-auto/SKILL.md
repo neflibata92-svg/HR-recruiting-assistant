@@ -60,31 +60,30 @@ type: workflow
 
 ## 浏览器与登录态（v1.1.3 不阻塞扫码等待）
 
-**正常流程直接 `start`**。start / fetch / greet 都自动保证 Edge + BOSS
+**正常流程直接 `start`**。start / fetch / greet 都自动保证专用浏览器 + BOSS
 登录态可用，不需要先跑 `doctor`：
 
-1. start 检查 9222 端口；未监听 → 自动启动**专用** Edge
-   （`--user-data-dir=%LOCALAPPDATA%\boss-hr-edge-profile` + `--remote-debugging-port=9222`，
-   **不**污染用户日常 Edge profile）。
+1. start 检查 9222 端口；未监听 → 自动启动**专用**浏览器
+   （Windows Edge / macOS Chrome，独立 profile + `--remote-debugging-port=9222`）。
 2. 自动启动后连接 CDP，只等待 CDP 端口/连接就绪（秒级，**不**阻塞扫码等待）。
 3. 已登录 → 继续执行 start 业务（实时解析岗位 → 创建 run）。
 4. 未登录 → 自动打开 BOSS 招聘者登录页 + 立即返回
    `status=waiting_user_login`（**不是错误**，`ok=true`）。
 5. **start 不在 CLI 内阻塞轮询扫码**——避免 Agent / 用户被卡 20s。
-   用户在专用 Edge 窗口扫码登录后，**重新执行完全相同的 `boss-hr start` 命令**
+   用户在专用浏览器窗口扫码登录后，**重新执行完全相同的 `boss-hr start` 命令**
    （不传任何新参数），让 CLI 复核登录态。
 6. start 收到 `waiting_user_login` 时**不创建 run、不抓 JD、不写 confirmed**。
 
 `doctor` 仍是独立诊断工具，但**不再是 start 的必经前置**。仅当：
 
-- 自动启动 Edge 失败（`EDGE_LAUNCH_FAILED` / `CDP_NOT_RUNNING` 超时）；
+- 自动启动浏览器失败（`EDGE_LAUNCH_FAILED` / `CDP_NOT_RUNNING` 超时）；
 - CDP 可连但 BOSS 始终判定未登录；
-- Edge 缺失或版本不匹配；
+- 浏览器缺失或版本不匹配；
 
 这些**才**用 `doctor` 排查。普通首次使用**不需要**先 doctor。
 
 调试时可加 `--no-auto-launch`：缺 CDP 时直接返回 `CDP_NOT_RUNNING`，
-跳过自动启动 Edge。`--login-wait-seconds N`（N>=1）启用旧 v1.1.2 阻塞轮询
+跳过自动启动浏览器。`--login-wait-seconds N`（N>=1）启用旧 v1.1.2 阻塞轮询
 路径；**Agent 不应传**该参数，仅作为人工调试兼容选项；
 N<=0（含默认值 0）→ start 立即返回 `waiting_user_login`，不阻塞。
 
@@ -113,11 +112,11 @@ N<=0（含默认值 0）→ start 立即返回 `waiting_user_login`，不阻塞�
 正常流程**直接** `boss-hr start`，不需先 doctor：
 
 - 9222 已开且已登录 → 立即进入 step 1 业务
-- 9222 未开 → 自动启动专用 Edge（`%LOCALAPPDATA%\boss-hr-edge-profile`，
-  `--remote-debugging-port=9222`，**不**碰日常 Edge profile）
+- 9222 未开 → 自动启动专用浏览器（Windows Edge / macOS Chrome，
+  `--remote-debugging-port=9222`，**不**碰日常浏览器 profile）
 - 自动启动后未登录 → 打开 BOSS 登录页，**立即**返回 `status=waiting_user_login`
   （**不是错误**），`next_action=scan_login_then_repeat_start`，**不创建 run**；
-  智能体停下，告诉用户在专用 Edge 中扫码登录，用户明确回复"已登录"后
+  智能体停下，告诉用户在专用浏览器中扫码登录，用户明确回复"已登录"后
   智能体**重新执行同一条 start**（不传任何新参数），让 CLI 复核登录态。
 
 调试可选：`--no-auto-launch` 关闭自动启动；`--login-wait-seconds N`（N>=1）

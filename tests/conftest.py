@@ -61,4 +61,7 @@ def _isolate_output_root(tmp_path, monkeypatch):
         return
 
     monkeypatch.setattr(output_manager, "OUTPUT_ROOT", str(tmp_path), raising=False)
+    import job_registry
+    monkeypatch.setattr(job_registry, "JOBS_REGISTRY_PATH",
+                        str(tmp_path / "jobs.json"), raising=False)
     yield

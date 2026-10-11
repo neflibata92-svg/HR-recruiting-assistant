@@ -85,7 +85,16 @@ def check_patchright_installed() -> bool:
 
 
 def check_edge_executable() -> Optional[str]:
-    """Windows 查找 Microsoft Edge 可执行文件。返回路径或 None。"""
+    """查找本机浏览器；保留旧函数名供现有调用方使用。"""
+    if sys.platform == "darwin":
+        candidates = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            os.path.expanduser(
+                "~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            ),
+        ]
+        return next((p for p in candidates if os.path.isfile(p)), None)
+
     candidates = [
         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
         r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
@@ -104,6 +113,10 @@ def check_edge_executable() -> Optional[str]:
         if os.path.isfile(candidate):
             return candidate
     return None
+
+
+def browser_name() -> str:
+    return "Google Chrome" if sys.platform == "darwin" else "Microsoft Edge"
 
 
 def check_cdp_port_listening(host: str = CDP_HOST, port: int = CDP_PORT) -> bool:

@@ -20,6 +20,7 @@
 ## 目录
 
 - [快速开始](#快速开始)
+- [macOS 安装与执行](docs/MACOS.md)
 - [项目能力](#项目能力)
 - [Skill 与工作流](#skill-与工作流)
 - [评分系统](#评分系统)
@@ -33,14 +34,14 @@
 
 ## 快速开始
 
-**推荐环境**：Windows、Python 3.10+ 和 Edge。macOS / Linux 的手动浏览器启动方法见下文；完整流程仅在 Windows 上验证过。
+**推荐环境**：Python 3.10+；Windows 使用 Edge，macOS 使用 Chrome。macOS 安装和运行步骤见 [macOS 安装与执行](docs/MACOS.md)。完整招聘流程此前仅在 Windows 上验证过。
 
-自 v1.1.2 起，正常使用无需预先手动启动 Edge 或运行 `boss-hr doctor`。安装后直接执行 `boss-hr start`：
+正常使用无需预先手动启动浏览器或运行 `boss-hr doctor`。安装后直接执行 `boss-hr start`：
 
 1. 若 9222 端口已有已登录的浏览器会话，直接进入业务流程。
-2. 若端口未开启，自动启动专用 Edge（`%LOCALAPPDATA%\boss-hr-edge-profile`，调试端口 9222），不使用日常 Edge 配置目录。
-3. 若尚未登录，打开 BOSS 招聘者登录页并等待人工登录，默认等待 20 秒。
-4. 若等待超时，返回 `status=waiting_user_login` 和 `next_action=retry_same_command`，不创建 run。登录后重试同一条 `start` 命令即可继续。
+2. 若端口未开启，自动启动专用浏览器（Windows Edge / macOS Chrome，调试端口 9222），不使用日常浏览器配置目录。
+3. 若尚未登录，打开 BOSS 招聘者登录页，立即返回 `status=waiting_user_login`，不创建 run。
+4. 用户在专用浏览器中登录后，重试同一条 `start` 命令即可继续。
 
 `boss-hr doctor` 用于独立诊断环境，不是 `start` 的必经步骤。
 
@@ -90,7 +91,7 @@ boss-hr status  --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>"
 > **当前限制**：
 > - 不支持 `continue` / `batch` / 多批累计
 > - 真实 `greet` 成功点击（≥70 分候选人实际点击发送）尚未完成受控验证
-> - 仅在 Windows 上完整验证过；macOS / Linux 需自测
+> - 完整招聘流程此前仅在 Windows 上验证过；macOS / Linux 需自测
 
 ### 环境准备与首次登录
 
@@ -102,7 +103,7 @@ boss-hr status  --job-name "<>" --encrypt-job-id "<>" --run-id "<rid>"
 | patchright | 连接 CDP 浏览器；不包含浏览器，也不会下载 Chromium | 运行 `pip install -e .` 时安装 |
 | Edge / Chrome | 承载 BOSS 招聘者登录会话 | 使用系统已安装的浏览器；Windows 推荐 Edge |
 
-正常流程由 `boss-hr start` 自动启动专用 Edge，并在需要时打开 BOSS 登录页。请在该窗口**人工扫码登录**。`start`、`fetch` 和 `greet` 遇到未登录状态时，会打开登录页并等待；自动启动失败时可运行 `boss-hr doctor --launch-edge` 排查。
+正常流程由 `boss-hr start` 自动启动专用浏览器，并在需要时打开 BOSS 登录页。请在该窗口**人工扫码登录**。`start` 未登录时立即返回；`fetch` 和 `greet` 可按其等待参数轮询登录。自动启动失败时可运行 `boss-hr doctor --launch-browser` 排查。
 
 只有自动启动失败或需要自行控制浏览器时，才手动开启 CDP：
 
@@ -114,13 +115,7 @@ Start-Process "msedge" -ArgumentList `
   "--user-data-dir=$env:LOCALAPPDATA\boss-hr-edge-profile"
 ```
 
-**macOS / Linux（Chrome）：**
-
-```bash
-google-chrome \
-  --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.boss-hr-edge-profile"
-```
+**macOS（Chrome）：**见 [macOS 安装与执行](docs/MACOS.md)。Linux 需按发行版实际浏览器路径自行启动 CDP，尚未完成端到端验证。
 
 登录状态由工具自动检查 `zp_at`、`wt2` 和 `bst` Cookie。排查时可用共享模块自检：
 

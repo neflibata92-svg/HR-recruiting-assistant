@@ -23,6 +23,7 @@ from boss_hr.adapters.browser_preflight import (
     check_python_version,
     check_patchright_installed,
     check_edge_executable,
+    browser_name,
     check_cdp_port_listening,
     check_cdp_connectable,
     check_boss_logged_in,
@@ -33,20 +34,25 @@ from boss_hr.adapters.browser_preflight import (
 
 
 # ============================================================
-# 启动专用 Edge（--launch-edge）
+# 启动专用浏览器（--launch-browser / --launch-edge）
 # ============================================================
 
 def _build_launch_edge_command(edge_path: str, profile_dir: str) -> list[str]:
-    """构造启动专用 Edge 的命令。
+    """构造启动专用浏览器的命令。
 
-    使用**专用 profile 目录**（不污染用户普通 Edge profile）：
-      %LOCALAPPDATA%\\boss-hr-edge-profile
+    使用专用 profile 目录，不污染用户日常浏览器资料。
     """
-    return [
+    cmd = [
         edge_path,
         f"--user-data-dir={profile_dir}",
         f"--remote-debugging-port={CDP_PORT}",
-        f"--remote-allow-origins=*",
+    ]
+    if sys.platform == "darwin":
+        cmd.append("--remote-debugging-address=127.0.0.1")
+    else:
+        cmd.append("--remote-allow-origins=*")
+    return [
+        *cmd,
         "--no-first-run",
         "--no-default-browser-check",
         "about:blank",
@@ -54,16 +60,20 @@ def _build_launch_edge_command(edge_path: str, profile_dir: str) -> list[str]:
 
 
 def _default_profile_dir() -> str:
-    """专用 Edge profile 目录。
+    """专用浏览器 profile 目录。
 
     优先 %LOCALAPPDATA%（跨用户安全，不硬编码任何具体用户名）。
     """
+    if sys.platform == "darwin":
+        return os.path.expanduser(
+            "~/Library/Application Support/HR-recruiting-assistant/chrome-profile"
+        )
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
     return os.path.join(base, "boss-hr-edge-profile")
 
 
 def launch_edge(*, wait_seconds: int = 15) -> dict:
-    """启动专用 Edge 并等待端口监听。
+    """启动专用浏览器并等待端口监听。保留旧函数名兼容现有调用方。
 
     Returns:
         dict: {"ok": bool, "edge_path": str, "profile_dir": str,
@@ -72,14 +82,15 @@ def launch_edge(*, wait_seconds: int = 15) -> dict:
     edge_path = check_edge_executable()
     if not edge_path:
         return {"ok": False, "error": "EDGE_NOT_FOUND",
-                "message": "未找到 Microsoft Edge 可执行文件",
+                "message": f"未找到 {browser_name()} 可执行文件",
                 "edge_path": None, "profile_dir": None, "pid": None}
 
     profile_dir = _default_profile_dir()
-    os.makedirs(profile_dir, exist_ok=True)
-
-    cmd = _build_launch_edge_command(edge_path, profile_dir)
     try:
+        os.makedirs(profile_dir, mode=0o700, exist_ok=True)
+        if sys.platform == "darwin":
+            os.chmod(profile_dir, 0o700)
+        cmd = _build_launch_edge_command(edge_path, profile_dir)
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -89,7 +100,7 @@ def launch_edge(*, wait_seconds: int = 15) -> dict:
         )
     except Exception as e:
         return {"ok": False, "error": "EDGE_LAUNCH_FAILED",
-                "message": f"启动 Edge 失败：{type(e).__name__}: {e}",
+                "message": f"启动 {browser_name()} 失败：{type(e).__name__}: {e}",
                 "edge_path": edge_path, "profile_dir": profile_dir, "pid": None}
 
     # 等待端口监听（最多 wait_seconds 秒）
@@ -102,7 +113,7 @@ def launch_edge(*, wait_seconds: int = 15) -> dict:
         time.sleep(0.5)
 
     return {"ok": False, "error": "CDP_NOT_RUNNING",
-            "message": f"已启动 Edge（pid={proc.pid}）但 {wait_seconds}s 内 9222 仍未监听",
+            "message": f"已启动 {browser_name()}（pid={proc.pid}）但 {wait_seconds}s 内 9222 仍未监听",
             "edge_path": edge_path, "profile_dir": profile_dir, "pid": proc.pid}
 
 
@@ -131,8 +142,8 @@ def run_doctor(*, launch_edge_flag: bool = False,
     if skip_browser:
         return _ok_or_diagnose_only(probe)
 
-    # 2. --launch-edge 流程
-    if launch_edge_flag:
+    # 2. --launch-browser / --launch-edge 流程
+    if launch_edge_flag and not check_cdp_port_listening():
         result = launch_edge()
         if not result["ok"]:
             return error(
@@ -146,14 +157,14 @@ def run_doctor(*, launch_edge_flag: bool = False,
                 remediation={
                     "command": "boss-hr doctor",
                     "instructions": [
-                        "在该专用 Edge 中登录 BOSS 招聘者后台",
-                        "登录后保持 Edge 窗口打开",
+                        f"在该专用 {browser_name()} 中登录 BOSS 招聘者后台",
+                        f"登录后保持 {browser_name()} 窗口打开",
                         "重新运行 boss-hr doctor 验证",
                     ],
                 },
             )
 
-    # 3. Edge 可执行
+    # 3. 浏览器可执行文件
     edge_path = check_edge_executable()
     probe.edge_path = edge_path
 
@@ -162,12 +173,12 @@ def run_doctor(*, launch_edge_flag: bool = False,
     if not probe.cdp_port_listening:
         return _diagnose(probe,
             ErrorCode.CDP_NOT_RUNNING,
-            f"未检测到 Edge 远程调试端口 {CDP_PORT}",
+            f"未检测到 {browser_name()} 远程调试端口 {CDP_PORT}",
             "launch_edge",
-            "boss-hr doctor --launch-edge",
+            "boss-hr doctor --launch-browser",
             [
-                "启动专用 Edge（带 --remote-debugging-port=9222）",
-                "在该 Edge 中登录 BOSS 招聘者后台",
+                f"启动专用 {browser_name()}（带 --remote-debugging-port=9222）",
+                f"在该 {browser_name()} 中登录 BOSS 招聘者后台",
                 "登录后重新运行 boss-hr doctor 验证",
             ],
         )
@@ -179,11 +190,11 @@ def run_doctor(*, launch_edge_flag: bool = False,
     if not cdp_ok:
         return _diagnose(probe,
             ErrorCode.CDP_CONNECT_FAILED,
-            f"Edge CDP 端口已开但连不上：{cdp_err}",
+            f"{browser_name()} CDP 端口已开但连不上：{cdp_err}",
             "restart_edge",
-            "boss-hr doctor --launch-edge",
+            "boss-hr doctor --launch-browser",
             [
-                "完全关闭该 Edge 后重新以 --remote-debugging-port=9222 启动",
+                f"完全关闭该 {browser_name()} 后重新以 --remote-debugging-port=9222 启动",
                 "或在另一个浏览器窗口登录后再次运行",
             ],
         )
@@ -196,12 +207,12 @@ def run_doctor(*, launch_edge_flag: bool = False,
     if not logged_in:
         return _diagnose(probe,
             ErrorCode.BOSS_LOGIN_REQUIRED,
-            "Edge 已启动但 BOSS 招聘者未登录。",
+            f"{browser_name()} 已启动但 BOSS 招聘者未登录。",
             "login_boss",
             "boss-hr doctor",
             [
-                "在专用 Edge 窗口中打开 https://www.zhipin.com 并扫码登录招聘者后台",
-                "登录后保持 Edge 窗口打开",
+                f"在专用 {browser_name()} 窗口中打开 https://www.zhipin.com 并扫码登录招聘者后台",
+                f"登录后保持 {browser_name()} 窗口打开",
                 "重新运行 boss-hr doctor 验证",
             ],
         )
@@ -210,11 +221,11 @@ def run_doctor(*, launch_edge_flag: bool = False,
     if probe.page_kind in ("unknown",) and not probe.page_url:
         return _diagnose(probe,
             ErrorCode.BOSS_PAGE_REQUIRED,
-            "Edge 已登录但当前不在 BOSS 招聘者页面。",
+            f"{browser_name()} 已登录但当前不在 BOSS 招聘者页面。",
             "open_boss_page",
             "boss-hr doctor",
             [
-                "在专用 Edge 中打开 https://www.zhipin.com/web/chat/recommend "
+                f"在专用 {browser_name()} 中打开 https://www.zhipin.com/web/chat/recommend "
                 "或 https://www.zhipin.com/web/chat/index",
                 "重新运行 boss-hr doctor 验证",
             ],
@@ -227,6 +238,9 @@ def run_doctor(*, launch_edge_flag: bool = False,
         data={
             "edge_found": probe.edge_path is not None,
             "edge_path": probe.edge_path,
+            "browser_found": probe.edge_path is not None,
+            "browser_name": browser_name(),
+            "browser_path": probe.edge_path,
             "cdp_port": CDP_PORT,
             "cdp_connected": probe.cdp_connected,
             "boss_logged_in": probe.boss_logged_in,
@@ -254,7 +268,21 @@ def _diagnose(probe: BrowserProbe, code: ErrorCode, message: str,
 
 
 def _ok_or_diagnose_only(probe: BrowserProbe) -> CommandResult:
-    """无浏览器路径：只返回本地检查结果（pytest / 无 CDP 环境用）。"""
+    """无浏览器路径：检查 Python 与 patchright，不连接 CDP。"""
+    if not probe.python_ok or not probe.patchright_installed:
+        missing = "Python 3.10+" if not probe.python_ok else "patchright"
+        return error(
+            error_obj=UnifiedError(
+                code=ErrorCode.INTERNAL,
+                message=f"本地依赖未就绪：缺少 {missing}",
+                recoverable=True,
+            ),
+            exit_code=ExitCode.GENERIC,
+            next_action="install_dependencies",
+            remediation={"instructions": ["在仓库根目录运行安装脚本后重试"]},
+            data={"python_version": probe.python_version,
+                  "patchright_installed": probe.patchright_installed},
+        )
     return ok(
         status="local_only",
         data={

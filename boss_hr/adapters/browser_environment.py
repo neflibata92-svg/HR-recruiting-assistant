@@ -44,6 +44,7 @@ from boss_hr.adapters.browser_preflight import (  # noqa: E402
     check_python_version,
     check_patchright_installed,
     check_edge_executable,
+    browser_name,
     check_cdp_port_listening,
     check_cdp_connectable,
     check_boss_logged_in,
@@ -86,23 +87,32 @@ class BrowserReadyResult:
 # ============================================================
 
 def _dedicated_profile_dir() -> str:
-    """专用 Edge profile 目录（不污染用户日常 Edge profile）。
+    """专用浏览器 profile 目录（不污染用户日常 profile）。
 
-    优先 %LOCALAPPDATA%（Windows 标准位置）；跨用户安全。
-    目录名固定 `boss-hr-edge-profile`（不嵌具体用户名变体）。
+    macOS 使用用户 Library；Windows 使用 %LOCALAPPDATA%。
     """
+    if sys.platform == "darwin":
+        return os.path.expanduser(
+            "~/Library/Application Support/HR-recruiting-assistant/chrome-profile"
+        )
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
     return os.path.join(base, "boss-hr-edge-profile")
 
 
 def _build_edge_launch_command(edge_path: str,
                                 profile_dir: str) -> list[str]:
-    """构造启动专用 Edge 的命令。"""
-    return [
+    """构造启动专用 Chromium 浏览器的命令。"""
+    cmd = [
         edge_path,
         f"--user-data-dir={profile_dir}",
         f"--remote-debugging-port={CDP_PORT}",
-        "--remote-allow-origins=*",
+    ]
+    if sys.platform == "darwin":
+        cmd.append("--remote-debugging-address=127.0.0.1")
+    else:
+        cmd.append("--remote-allow-origins=*")
+    return [
+        *cmd,
         "--no-first-run",
         "--no-default-browser-check",
         "about:blank",
@@ -110,7 +120,9 @@ def _build_edge_launch_command(edge_path: str,
 
 
 def _ensure_dir(p: str) -> None:
-    os.makedirs(p, exist_ok=True)
+    os.makedirs(p, mode=0o700, exist_ok=True)
+    if sys.platform == "darwin":
+        os.chmod(p, 0o700)
 
 
 # ============================================================
@@ -138,14 +150,13 @@ def launch_dedicated_edge(*, wait_seconds: int = CDP_LAUNCH_WAIT_SECONDS
     if not edge_path:
         return _EdgeLaunch(
             ok=False, error_code="EDGE_NOT_FOUND",
-            message="未找到 Microsoft Edge 可执行文件",
+            message=f"未找到 {browser_name()} 可执行文件",
         )
 
     profile_dir = _dedicated_profile_dir()
-    _ensure_dir(profile_dir)
-
-    cmd = _build_edge_launch_command(edge_path, profile_dir)
     try:
+        _ensure_dir(profile_dir)
+        cmd = _build_edge_launch_command(edge_path, profile_dir)
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -156,7 +167,7 @@ def launch_dedicated_edge(*, wait_seconds: int = CDP_LAUNCH_WAIT_SECONDS
     except Exception as e:
         return _EdgeLaunch(
             ok=False, error_code="EDGE_LAUNCH_FAILED",
-            message=f"启动 Edge 失败：{type(e).__name__}: {e}",
+            message=f"启动 {browser_name()} 失败：{type(e).__name__}: {e}",
             edge_path=edge_path, profile_dir=profile_dir,
         )
 
@@ -171,7 +182,7 @@ def launch_dedicated_edge(*, wait_seconds: int = CDP_LAUNCH_WAIT_SECONDS
 
     return _EdgeLaunch(
         ok=False, error_code="CDP_NOT_RUNNING",
-        message=f"已启动 Edge（pid={proc.pid}）但 {wait_seconds}s 内 9222 仍未监听",
+        message=f"已启动 {browser_name()}（pid={proc.pid}）但 {wait_seconds}s 内 9222 仍未监听",
         edge_path=edge_path, profile_dir=profile_dir, pid=proc.pid,
     )
 
@@ -310,7 +321,7 @@ def ensure_browser_ready(*, auto_launch: bool = True,
             ok=False,
             error_obj=UnifiedError(
                 code=ErrorCode.BOSS_LOGIN_REQUIRED,
-                message="Edge 已就绪但 BOSS 招聘者尚未登录。",
+                message=f"{browser_name()} 已就绪但 BOSS 招聘者尚未登录。",
                 recoverable=True,
             ),
             next_action="login_then_repeat_command",
@@ -363,40 +374,42 @@ def ensure_browser_ready(*, auto_launch: bool = True,
     login_session_reused = False
     login_page_opened = False
 
-    # 3. Edge 可执行
-    if not check_edge_executable():
+    browser = browser_name()
+    # 3. 端口已就绪时直接复用；否则查找可自动启动的浏览器。
+    port_listening = check_cdp_port_listening()
+    if not port_listening and not check_edge_executable():
         return BrowserReadyResult(
             ok=False,
             error_obj=UnifiedError(
                 code=ErrorCode.EDGE_NOT_FOUND,
-                message="未找到 Microsoft Edge 可执行文件",
+                message=f"未找到 {browser} 可执行文件",
                 recoverable=True,
             ),
-            next_action="install_edge",
+            next_action="install_browser",
             remediation={
                 "instructions": [
-                    "安装 Microsoft Edge 浏览器",
+                    f"安装 {browser} 浏览器",
                     "重新运行原命令",
                 ],
             },
         )
 
     # 4. CDP 端口
-    if not check_cdp_port_listening():
+    if not port_listening:
         if not auto_launch:
             return BrowserReadyResult(
                 ok=False,
                 error_obj=UnifiedError(
                     code=ErrorCode.CDP_NOT_RUNNING,
-                    message=f"未检测到 Edge 远程调试端口 {CDP_PORT}",
+                    message=f"未检测到 {browser} 远程调试端口 {CDP_PORT}",
                     recoverable=True,
                 ),
                 next_action="launch_edge",
                 remediation={
-                    "command": "boss-hr doctor --launch-edge",
+                    "command": "boss-hr doctor --launch-browser",
                     "instructions": [
-                        "启动专用 Edge（带 --remote-debugging-port=9222）",
-                        "在该 Edge 中登录 BOSS 招聘者后台",
+                        f"启动专用 {browser}（带 --remote-debugging-port=9222）",
+                        f"在该 {browser} 中登录 BOSS 招聘者后台",
                         "登录后重新运行原命令",
                     ],
                 },
@@ -408,15 +421,15 @@ def ensure_browser_ready(*, auto_launch: bool = True,
                 ok=False,
                 error_obj=UnifiedError(
                     code=ErrorCode(launch.error_code or "EDGE_LAUNCH_FAILED"),
-                    message=launch.message or "Edge 启动失败",
+                    message=launch.message or f"{browser} 启动失败",
                     recoverable=True,
                 ),
                 next_action="manual_diagnose",
                 remediation={
                     "command": "boss-hr doctor",
                     "instructions": [
-                        "Edge 自动启动失败；运行 boss-hr doctor 查看详细诊断",
-                        "或手动以 --remote-debugging-port=9222 启动 Edge 后重试",
+                        f"{browser} 自动启动失败；运行 boss-hr doctor 查看详细诊断",
+                        f"或手动以 --remote-debugging-port=9222 启动 {browser} 后重试",
                     ],
                 },
                 info={"edge_path": launch.edge_path,
@@ -431,14 +444,14 @@ def ensure_browser_ready(*, auto_launch: bool = True,
             ok=False,
             error_obj=UnifiedError(
                 code=ErrorCode.CDP_CONNECT_FAILED,
-                message=f"Edge CDP 端口已开但连不上：{cdp_err}",
+                message=f"{browser} CDP 端口已开但连不上：{cdp_err}",
                 recoverable=True,
             ),
             next_action="restart_edge",
             remediation={
-                "command": "boss-hr doctor --launch-edge",
+                "command": "boss-hr doctor --launch-browser",
                 "instructions": [
-                    "完全关闭该 Edge 后重新以 --remote-debugging-port=9222 启动",
+                    f"完全关闭该 {browser} 后重新以 --remote-debugging-port=9222 启动",
                     "或运行 boss-hr doctor 排查",
                 ],
             },
@@ -472,9 +485,9 @@ def ensure_browser_ready(*, auto_launch: bool = True,
                 error_obj=UnifiedError(
                     code=ErrorCode.BOSS_LOGIN_REQUIRED,
                     message=(
-                        "Edge 已就绪但 BOSS 招聘者尚未登录。"
+                        f"{browser} 已就绪但 BOSS 招聘者尚未登录。"
                         if login_page_opened
-                        else "Edge 已启动，但 BOSS 招聘者尚未登录。"
+                        else f"{browser} 已启动，但 BOSS 招聘者尚未登录。"
                     ),
                     recoverable=True,
                 ),
@@ -483,10 +496,10 @@ def ensure_browser_ready(*, auto_launch: bool = True,
                     {
                         "command": "boss-hr start <同样的 query>",
                         "instructions": [
-                            f"Edge 已自动打开 BOSS 登录页（{EDGE_BROWSER_LOGIN_URL}）"
+                            f"{browser} 已自动打开 BOSS 登录页（{EDGE_BROWSER_LOGIN_URL}）"
                             if login_page_opened else
-                            f"请在专用 Edge 窗口中手动打开 {EDGE_BROWSER_LOGIN_URL}",
-                            "在专用 Edge 内扫码登录 BOSS 招聘者后台",
+                            f"请在专用 {browser} 窗口中手动打开 {EDGE_BROWSER_LOGIN_URL}",
+                            f"在专用 {browser} 内扫码登录 BOSS 招聘者后台",
                             "登录完成后重新运行原命令",
                         ],
                     }
@@ -520,7 +533,7 @@ def ensure_browser_ready(*, auto_launch: bool = True,
         if login_page_opened:
             timeout_msg = "已自动打开 BOSS 招聘者登录页，但登录超时。"
             remediation_instructions = [
-                f"Edge 已自动打开 BOSS 登录页（{EDGE_BROWSER_LOGIN_URL}）",
+                f"{browser} 已自动打开 BOSS 登录页（{EDGE_BROWSER_LOGIN_URL}）",
                 f"请在 {login_wait_seconds}s 内扫码登录招聘者后台",
                 "登录完成后重新运行原命令",
             ]
@@ -530,11 +543,11 @@ def ensure_browser_ready(*, auto_launch: bool = True,
                 f"（{login_page_open_error}）" if login_page_open_error else ""
             )
             timeout_msg = (
-                f"已自动启动专用 Edge，但未能自动打开 BOSS 招聘者登录页{err_suffix}。"
-                f"请在专用 Edge 窗口中手动打开 {EDGE_BROWSER_LOGIN_URL} 登录。"
+                f"已自动启动专用 {browser}，但未能自动打开 BOSS 招聘者登录页{err_suffix}。"
+                f"请在专用 {browser} 窗口中手动打开 {EDGE_BROWSER_LOGIN_URL} 登录。"
             )
             remediation_instructions = [
-                f"在已自动打开的专用 Edge 窗口中手动打开：{EDGE_BROWSER_LOGIN_URL}",
+                f"在已自动打开的专用 {browser} 窗口中手动打开：{EDGE_BROWSER_LOGIN_URL}",
                 f"在 {login_wait_seconds}s 内完成 BOSS 招聘者扫码登录",
                 "登录完成后重新运行原命令",
             ]
@@ -568,7 +581,7 @@ def ensure_browser_ready(*, auto_launch: bool = True,
         next_action="login_then_retry",
         remediation={
             "instructions": [
-                "在专用 Edge 窗口中登录 BOSS 招聘者后台",
+                f"在专用 {browser} 窗口中登录 BOSS 招聘者后台",
                 "重新运行原命令",
             ],
         },

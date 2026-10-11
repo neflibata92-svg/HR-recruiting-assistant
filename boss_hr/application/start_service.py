@@ -34,6 +34,7 @@ from boss_hr.adapters.legacy_runner import (
     legacy_error, try_extract_blocked_message,
 )
 from boss_hr.adapters.browser_environment import ensure_browser_ready
+from boss_hr.adapters.browser_preflight import browser_name
 
 
 _RUN_ID_LINE_RE = re.compile(
@@ -227,9 +228,10 @@ def start_new_run(*, query: Optional[str], job_name: Optional[str],
             if ready.error_obj and ready.error_obj.code == ErrorCode.BOSS_LOGIN_REQUIRED:
                 _info = ready.info or {}
                 _opened = bool(_info.get("login_page_opened", False))
+                _browser = browser_name()
                 if _opened:
                     _msg = (
-                        "已为你打开专用 Edge，请在浏览器中扫码登录 BOSS 招聘者后台。"
+                        f"已为你打开专用 {_browser}，请在浏览器中扫码登录 BOSS 招聘者后台。"
                         "完成后回复“好了”，我会重新执行同一条 start。"
                     )
                 else:
@@ -237,9 +239,9 @@ def start_new_run(*, query: Optional[str], job_name: Optional[str],
                     _err = _info.get("login_page_open_error") or ""
                     _suffix = f"（{_err}）" if _err else ""
                     _msg = (
-                        "已为你启动专用 Edge，但未能自动打开 BOSS 招聘者登录页"
+                        f"已为你启动专用 {_browser}，但未能自动打开 BOSS 招聘者登录页"
                         f"{_suffix}。"
-                        "请在已打开的专用 Edge 窗口中手动打开 "
+                        f"请在已打开的专用 {_browser} 窗口中手动打开 "
                         "https://www.zhipin.com/web/chat/recommend 登录。"
                         "完成后回复“好了”，我会重新执行同一条 start。"
                     )

@@ -121,7 +121,7 @@ def test_ensure_browser_ready_no_auto_launch_returns_cdp_not_running(monkeypatch
     assert r.ok is False
     assert r.error_obj.code.value == "CDP_NOT_RUNNING"
     assert r.error_obj.recoverable is True
-    assert r.remediation["command"] == "boss-hr doctor --launch-edge"
+    assert r.remediation["command"] == "boss-hr doctor --launch-browser"
 
 
 def test_ensure_browser_ready_auto_launch_calls_launch_dedicated_edge(monkeypatch):
@@ -334,6 +334,7 @@ def test_start_no_auto_launch_argparse():
 def test_dedicated_profile_dir_fixed_name(monkeypatch):
     """profile 目录名固定为 boss-hr-edge-profile（不嵌用户名变体）。"""
     from boss_hr.adapters import browser_environment as be
+    monkeypatch.setattr(be.sys, "platform", "win32")
     # 清掉环境变量
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
     monkeypatch.delenv("APPDATA", raising=False)
@@ -348,6 +349,7 @@ def test_dedicated_profile_dir_fixed_name(monkeypatch):
 def test_dedicated_profile_dir_uses_localappdata(monkeypatch):
     """优先 %LOCALAPPDATA%。"""
     from boss_hr.adapters import browser_environment as be
+    monkeypatch.setattr(be.sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", "C:/Users/test/AppData/Local")
     monkeypatch.delenv("APPDATA", raising=False)
     p = be._dedicated_profile_dir()
@@ -786,7 +788,7 @@ def test_start_waiting_user_login_message_confirms_when_page_opened(monkeypatch)
     assert d["ok"] is True
     assert d["status"] == "waiting_user_login"
     assert d["data"]["login_page_opened"] is True
-    assert "已为你打开专用 Edge" in d["message"]
+    assert "已为你打开专用" in d["message"]
     assert "登录" in d["message"]
 
 

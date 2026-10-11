@@ -371,6 +371,19 @@ def test_build_geek_id_index_fallback_to_new_resumes(auto_greet, tmp_path):
 # 7. greet_service: partial_success / complete / no_candidates / all_not_found
 # ============================================================
 
+@pytest.fixture
+def mock_greet_cli(monkeypatch):
+    """只测试已有 greet_log 的状态映射，不连接浏览器或运行子脚本。"""
+    from boss_hr.application import greet_service
+    from boss_hr.adapters.browser_environment import BrowserReadyResult
+    from boss_hr.adapters.legacy_runner import LegacyRunResult
+
+    monkeypatch.setattr(greet_service, "ensure_browser_ready",
+                        lambda **kwargs: BrowserReadyResult(ok=True))
+    monkeypatch.setattr(greet_service.legacy_runner, "run_legacy_cli",
+                        lambda *args, **kwargs: LegacyRunResult(0, "", ""))
+
+
 def _build_run(tmp_path, eid, rid, jn, *, greeted, not_found):
     """写一份真实结构的 run + greet_log.json。"""
     run_dir = tmp_path / eid / "runs" / rid
@@ -409,7 +422,7 @@ def _build_run(tmp_path, eid, rid, jn, *, greeted, not_found):
         json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def test_greet_service_complete_returns_done(tmp_path, monkeypatch):
+def test_greet_service_complete_returns_done(tmp_path, monkeypatch, mock_greet_cli):
     """greeted=3 not_found=0 → complete → next_action=done。"""
     from boss_hr.application.greet_service import greet_candidates
     monkeypatch.setenv("BOSS_HR_OUTPUT_DIR", str(tmp_path))
@@ -427,7 +440,7 @@ def test_greet_service_complete_returns_done(tmp_path, monkeypatch):
     assert d["data"]["partial_success_warnings"] is False
 
 
-def test_greet_service_partial_success_returns_review_warnings(tmp_path, monkeypatch):
+def test_greet_service_partial_success_returns_review_warnings(tmp_path, monkeypatch, mock_greet_cli):
     """greeted=3 not_found=1 → partial_success → next_action=review_warnings。"""
     from boss_hr.application.greet_service import greet_candidates
     monkeypatch.setenv("BOSS_HR_OUTPUT_DIR", str(tmp_path))
@@ -447,7 +460,7 @@ def test_greet_service_partial_success_returns_review_warnings(tmp_path, monkeyp
     assert "NF0" in d["data"]["not_found_names"]
 
 
-def test_greet_service_all_not_found_returns_review_warnings(tmp_path, monkeypatch):
+def test_greet_service_all_not_found_returns_review_warnings(tmp_path, monkeypatch, mock_greet_cli):
     """greeted=0 not_found=3 → all_not_found → partial_success_warnings=True。"""
     from boss_hr.application.greet_service import greet_candidates
     monkeypatch.setenv("BOSS_HR_OUTPUT_DIR", str(tmp_path))
@@ -466,7 +479,7 @@ def test_greet_service_all_not_found_returns_review_warnings(tmp_path, monkeypat
     assert d["data"]["greet_log_status"] == "all_not_found"
 
 
-def test_greet_service_no_candidates(tmp_path, monkeypatch):
+def test_greet_service_no_candidates(tmp_path, monkeypatch, mock_greet_cli):
     """空 greet_log → no_candidates。"""
     from boss_hr.application.greet_service import greet_candidates
     monkeypatch.setenv("BOSS_HR_OUTPUT_DIR", str(tmp_path))
@@ -492,7 +505,7 @@ def test_greet_service_no_candidates(tmp_path, monkeypatch):
 # ============================================================
 
 def test_e2e_targeted_4_greeted_3_not_found_1_returns_partial_success(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, mock_greet_cli):
     """v1.1.3 修复目标端到端：4 目标 → 3 招呼成功 + 1 not_found → partial_success。"""
     from boss_hr.application.greet_service import greet_candidates
     monkeypatch.setenv("BOSS_HR_OUTPUT_DIR", str(tmp_path))
@@ -838,7 +851,7 @@ def _write_dry_run_log(run_dir, *, greeted, not_found, dry_run_status):
         json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def test_greet_service_dry_run_complete_cli_status(tmp_path, monkeypatch):
+def test_greet_service_dry_run_complete_cli_status(tmp_path, monkeypatch, mock_greet_cli):
     """dry_run_complete → cli_status=dry_run_complete / next_action=done /
     greeted=0 / partial_success_warnings=False。"""
     from boss_hr.application.greet_service import greet_candidates
@@ -860,7 +873,7 @@ def test_greet_service_dry_run_complete_cli_status(tmp_path, monkeypatch):
     assert d["data"]["partial_success_warnings"] is False
 
 
-def test_greet_service_dry_run_review_cli_status(tmp_path, monkeypatch):
+def test_greet_service_dry_run_review_cli_status(tmp_path, monkeypatch, mock_greet_cli):
     """dry_run_review → cli_status=dry_run_review / next_action=review_warnings /
     partial_success_warnings=True。"""
     from boss_hr.application.greet_service import greet_candidates
@@ -883,7 +896,7 @@ def test_greet_service_dry_run_review_cli_status(tmp_path, monkeypatch):
     assert d["data"]["not_found"] == 1
 
 
-def test_greet_service_dry_run_no_candidates_cli_status(tmp_path, monkeypatch):
+def test_greet_service_dry_run_no_candidates_cli_status(tmp_path, monkeypatch, mock_greet_cli):
     """dry_run + 目标列表为空 → cli_status=no_candidates / next_action=done。"""
     from boss_hr.application.greet_service import greet_candidates
     monkeypatch.setenv("BOSS_HR_OUTPUT_DIR", str(tmp_path))
